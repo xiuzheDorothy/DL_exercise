@@ -48,3 +48,66 @@ def parse_cfg(cfgfile):
     # print('\n\n'.join([repr(x) for x in blocks]))
     return blocks
 parse_cfg('./cfg/yolov3.cfg')
+print(0)
+def creat_modules(blocks):
+    net_info = blocks[0]
+    module_list = nn.ModuleList()
+    prev_fliters = 3
+
+    for index , x in enumerate(blocks):
+        module=nn.Sequential()
+
+        if (x['type'])=='convolutional':
+            activation=x['activation']
+            try:
+                batch_normalize = int(x['batch_normalize'])
+                bias = False #卷积层后接BN就不需要bias
+            except:
+                batch_normalize = 0
+                bias = True #卷积层后无BN层就需要bias
+
+            filters = int(x['filters'])
+            padding = int(x["pad"])
+            kernel_size = int(x["size"])
+            stride = int(x["stride"])
+
+            if padding: # config文件中的pad表示这一层是否经过padding操作（数值只为1）
+                        # 因而pad的值要如下实际计算
+                pad = (kernel_size-1)//2    # 向下除接近的整数
+            else:
+                pad = 0
+
+            # 下来开始创建层：
+            conv = nn.Conv2d(prev_fliters,filters,kernel_size,stride,pad,bias = bias)
+            module.add_module('conv_{0}'.format(index) ,conv) #format 格式化函数
+
+            #batch norm layer
+            if batch_normalize:
+                bn = nn.BatchNorm2d(filters)
+                module.add_module('batch_norm_{0}'.format(index), bn)
+
+            #activation
+            if  activation=='leaky':
+                active_layer = nn.LeakyReLU(0.1,inplace=True) #LeakyReLU函数在负数范围的斜率为0.1
+                module.add_module("leaky_{0}".format(index), active_layer)
+        elif (x['type'] == 'upsample'):
+            stride = int(x['stride'])
+            # #这个stride在cfg中就是2，所以下面的scale_factor写2或者stride是一样的
+            upsample = nn.Upsample(scale_factor=2,mode='nearnst')
+            module.add_module("upsample_{}".format(index), upsample)
+
+        # route层
+        # 当layer取值为正时，输出这个正数对应的层的特征
+        # 如果layer取值为负数，输出route层向后退layer层对应层的特征
+        elif (x['type'] == 'route'):
+            x['layers'] = x['layers'].split(',')
+            start=int(x['layers'][0])
+            try:
+                end=int(x['layers'][0])
+            except:
+                end=0
+            if start>0:
+                start=start-index
+            if end > 0:  # 若end>0，由于end= end - index，再执行index + end输出的还是第end层的特征
+                end = end - index
+
