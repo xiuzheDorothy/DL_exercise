@@ -15,7 +15,6 @@ def get_test_input():
     img_ = Variable(img_)  # Convert to Variable
     return img_
 
-
 def parse_cfg(cfgfile):
     """
     输入: 配置文件路径
@@ -47,12 +46,24 @@ def parse_cfg(cfgfile):
     blocks.append(block)  # 退出循环，将最后一个未加入的block加进去
     # print('\n\n'.join([repr(x) for x in blocks]))
     return blocks
-parse_cfg('./cfg/yolov3.cfg')
-print(0)
+
+# parse_cfg('./cfg/yolov3.cfg')
+# print(0)
+
+class EmptyLayer(nn.Module):
+    def __init__(self):
+        super(EmptyLayer, self).__init__()
+
+class DetectionLayer(nn.Module):
+    def __init__(self, anchors):
+        super(DetectionLayer, self).__init__()
+        self.anchors = anchors
+
 def creat_modules(blocks):
     net_info = blocks[0]
     module_list = nn.ModuleList()
     prev_fliters = 3
+    output_filters = []# 我们不仅需要追踪前一层的卷积核数量，还需要追踪之前每个层。随着不断地迭代，我们将每个模块的输出卷积核数量添加到 output_filters 列表上。
 
     for index , x in enumerate(blocks):
         module=nn.Sequential()
@@ -110,4 +121,35 @@ def creat_modules(blocks):
                 start=start-index
             if end > 0:  # 若end>0，由于end= end - index，再执行index + end输出的还是第end层的特征
                 end = end - index
+            route=EmptyLayer()
+            module.add_module("route_{0}".format(index), route)
+            if end < 0:  # 若end<0，则end还是end，输出index+end(而end<0)故index向后退end层的特征。
+                filters = output_filters[index + start] + output_filters[index + end]
+            else:  # 如果没有第二个参数，end=0，则对应下面的公式，此时若start>0，由于start = start - index，再执行index + start输出的还是第start层的特征;若start<0，则start还是start，输出index+start(而start<0)故index向后退start层的特征。
+                filters = output_filters[index + start]
+                # shortcut corresponds to skip connection
+        # shortcut
+        elif x["type"] == "shortcut":
+            shortcut = EmptyLayer()  # 使用空的层，因为它还要执行一个非常简单的操作（加）。没必要更新 filters 变量,因为它只是将前一层的特征图添加到后面的层上而已。
+            module.add_module("shortcut_{}".format(index), shortcut)
 
+        ##yolo
+        elif x["type"] == "yolo":
+            mask = x["mask"].split(",")
+            mask = [int(x) for x in mask]
+
+            anchors = x["anchors"].split(",")
+            anchors = [int(a) for a in anchors]
+            anchors = [(anchors[i], anchors[i+1]) for i in range(0, len(anchors),2)]
+            anchors = [anchors[i] for i in mask]
+
+            detection = DetectionLayer(anchors)# 锚点,检测,位置回归,分类，这个类见predict_transform中
+            module.add_module("Detection_{}".format(index), detection)
+
+        module_list.append(module)# 最后将打包好的module放入module_list中
+        prev_filters = filters
+        output_filters.append(filters)
+
+    return (net_info, module_list)
+
+class Darknet((nn.Module):
