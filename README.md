@@ -10,3 +10,4 @@ DL_exercise目前包括以下几方面内容：
 - my_yolov3 项目：yolov3优化与复现计划
 - python python零碎知识点记录，后续会加上python系统学习
 - torch pytorch系统学习记录
+- EvolutionaryAlgorithm 进化算法，包括调geatpy库和手动实现
